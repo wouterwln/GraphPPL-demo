@@ -1,88 +1,114 @@
-println("Starting experiments...")
 println("Loading dependencies...")
-
 using RxInfer
 using Distributions
 using StableRNGs
 using Random
 using Plots
-
+pgfplotsx()
 println("Dependencies loaded successfully!")
 
-rng = StableRNG(42)
 
-@model function ssm_step(x_prev, x_next, y, p)
-    x_next ~ NormalMeanVariance(x_prev + p, 10)
-    o_var ~ InverseGamma(2, 0.001)
-    y ~ NormalMeanVariance(x_next, o_var)
+@model function ssm_step(x_prev, x_next, y, drift, precision)
+    x_next_mean := x_prev + drift
+    x_next ~ Normal(mean=x_next_mean, variance=10)
+    y ~ Normal(mean=x_next, precision=precision)
 end
 
-
-@model function ssm(p, y)
-    x[1] ~ NormalMeanVariance(1.0, 10.0)
-    for i in eachindex(p)
-        y[i] ~ ssm_step(x_prev=x[i], x_next=new(x[i+1]), p=p[i])
+@model function ssm(drift, y)
+    observation_precision ~ Gamma(2, 1)
+    x[1] ~ Normal(mean=1.0, variance=10.0)
+    for i in eachindex(drift)
+        y[i] ~ ssm_step(x_prev=x[i], x_next=new(x[i+1]), drift=drift[i], precision=observation_precision)
     end
 end
 
 @model function hierarchical_ssm(y)
-    local h1
+    local upper_drift
     for i in eachindex(y)
-        h1[i] ~ NormalMeanVariance(0, 1)
+        upper_drift[i] ~ Normal(mean=0, variance=1)
     end
-    h2 ~ ssm(p=h1)
-    y ~ ssm(p=h2)
+    hidden_state_drift ~ ssm(drift=upper_drift)
+    y ~ ssm(drift=hidden_state_drift)
 end
 
-println("Generating data...")
 
-n = 100
-top_priors = [rand(Normal(0, 1)) for _ in 1:n]
-hidden_top = [rand(rng, Normal(0, 1))]
-obs_top = []
-hidden_bottom = [rand(rng, Normal(0, 1))]
-y = []
-for i in 1:n
-    push!(hidden_top, rand(rng, Normal(hidden_top[end] + top_priors[length(hidden_top)], 2)))
-    push!(obs_top, rand(rng, Normal(hidden_top[end], 2)))
-    push!(hidden_bottom, rand(rng, Normal(hidden_bottom[end] + obs_top[end], 2)))
-    push!(y, rand(rng, Normal(hidden_bottom[end], 5)))
+RxInfer.default_init(::typeof(ssm)) = @initialization begin
+    q(observation_precision) = Gamma(2, 100)
 end
 
-println("Data generated successfully!")
 
-init = @initialization begin
-    q(h1) = NormalMeanVariance(0, 100)
-    μ(h1) = NormalMeanVariance(0, 100)
-    q(h2) = NormalMeanVariance(0, 100)
-    μ(h2) = NormalMeanVariance(0, 100)
-end
+function run_experiments(png=false)
 
-constraints = @constraints begin
-    for q in ssm
-        for q in ssm_step
-            q(x_next, y, o_var) = q(x_next, y)q(o_var)
+    println("Starting experiments...")
+
+
+
+    if png
+        gr()
+    else
+        pgfplotsx()
+    end
+
+
+
+    rng = StableRNG(42)
+
+    println("Generating data...")
+
+    n = 100
+    top_priors = [rand(rng, Normal(0, 1)) for _ in 1:n]
+    hidden_top = [rand(rng, Normal(0, 1))]
+    obs_top = []
+    hidden_bottom = [rand(rng, Normal(0, 1))]
+    y = []
+    for i in 1:n
+        push!(hidden_top, rand(rng, Normal(hidden_top[end] + top_priors[length(hidden_top)], 2)))
+        push!(obs_top, rand(rng, Normal(hidden_top[end], 2)))
+        push!(hidden_bottom, rand(rng, Normal(hidden_bottom[end] + obs_top[end], 2)))
+        push!(y, rand(rng, Normal(hidden_bottom[end], 5)))
+    end
+
+    println("Data generated successfully!")
+
+    init = @initialization begin
+        q(upper_drift) = NormalMeanVariance(0, 100)
+        μ(upper_drift) = NormalMeanVariance(0, 100)
+        q(hidden_state_drift) = NormalMeanVariance(0, 100)
+        μ(hidden_state_drift) = NormalMeanVariance(0, 100)
+    end
+
+    constraints = @constraints begin
+        for q in ssm
+            for q in ssm_step
+                q(x_next, y, precision) = q(x_next, y)q(precision)
+            end
         end
     end
+
+
+
+    println("Running inference...")
+
+    result = infer(model=hierarchical_ssm(), iterations=10, data=(y=y,), initialization=init, constraints=constraints)
+
+    println("Inference completed successfully!")
+    println("Generating plots...")
+
+    posterior = last(result.posteriors[:hidden_state_drift])
+
+    p1 = plot(hidden_top, label="Drift Hidden State", size=(500, 400), extra_kwargs=:subplot, legend=:bottomright)
+    plot!(p1, mean.(posterior), ribbon=std.(posterior), label="Estimated Drift")
+    scatter!(p1, obs_top, label="Actual Drift", markersize=3)
+    if png
+        savefig(p1, "plots/hierarchical_ssm.png")
+    else
+        savefig(p1, "plots/hierarchical_ssm.tikz")
+    end
+
+    p2 = scatter(y, size=(500, 400), label="Observations", extra_kwargs=:subplot, legend=:topright, markersize=3)
+    if png
+        savefig(p2, "plots/observations.png")
+    else
+        savefig(p2, "plots/observations.tikz")
+    end
 end
-
-RxInfer.default_init(::typeof(ssm_step)) = @initialization begin
-    q(o_var) = InverseGamma(2, 0.01)
-end
-
-println("Running inference...")
-
-result = infer(model=hierarchical_ssm(), iterations=10, data=(y=y,), initialization=init, constraints=constraints)
-
-println("Inference completed successfully!")
-println("Generating plots...")
-
-posterior = last(result.posteriors[:h2])
-
-plot(hidden_top, label="Hidden state", size=(750, 400))
-plot!(mean.(posterior), ribbon=std.(posterior), label="Estimated hidden state")
-scatter!(obs_top, label="Hidden state used in observations")
-savefig("plots/hierarchical_ssm.png")
-
-scatter(y, size=(750, 400), label="Observations")
-savefig("plots/observations.png")
