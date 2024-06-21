@@ -10,7 +10,7 @@ using DrWatson
 
 # Here you may include files from the source directory
 include(srcdir("experiments.jl"))
-run_experiments("--png" in ARGS)
+run_experiments("--tikz" in ARGS)
 println(
     """
     Experiments run successfully!

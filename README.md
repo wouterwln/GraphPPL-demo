@@ -16,5 +16,5 @@ everything should work out of the box. The plots will be saved in the `plots` fo
 
 # Reproducing paper visualizations
 
-To reproduce the visualizations from the paper, a script `run.jl` has been included in the `scripts` folder. This script will run all the necessary code to generate the TikZ code for the visualizations. However, this script assumes you have a valid LaTeX installation on your system. If you don't have LaTeX installed, you can still run the code with the `--png` flag to generate PNG images. These PNG images will not be exactly the same as the ones in the paper (due to the stylization of TikZ), but they will show exactly the same data and results. The command to run then becomes `julia scripts/run.jl --project=. --png`.
+To reproduce the visualizations from the paper, a script `run.jl` has been included in the `scripts` folder. This script will run all the necessary code to generate the plots. The plots in the paper are generated with TikZ, so the PNG images might look slightly different. However, the TikZ script assumes you have a valid LaTeX installation on your system. If you have LaTeX installed, you can run the code with the `--tikz` flag to generate TikZ code. The command to run then becomes `julia scripts/run.jl --project=. --tikz`.
 

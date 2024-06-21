@@ -37,16 +37,18 @@ RxInfer.default_init(::typeof(ssm)) = @initialization begin
 end
 
 
-function run_experiments(png=false)
+function run_experiments(tikz=false)
 
     println("Starting experiments...")
 
+    if !isdir("plots")
+        mkdir("plots")
+    end
 
-
-    if png
-        gr()
-    else
+    if tikz
         pgfplotsx()
+    else
+        gr()
     end
 
 
@@ -99,14 +101,14 @@ function run_experiments(png=false)
     p1 = plot(hidden_top, label="Drift Hidden State", size=(500, 400), extra_kwargs=:subplot, legend=:bottomright)
     plot!(p1, mean.(posterior), ribbon=std.(posterior), label="Estimated Drift")
     scatter!(p1, obs_top, label="Actual Drift", markersize=3)
-    if png
+    if !tikz
         savefig(p1, "plots/hierarchical_ssm.png")
     else
         savefig(p1, "plots/hierarchical_ssm.tikz")
     end
 
     p2 = scatter(y, size=(500, 400), label="Observations", extra_kwargs=:subplot, legend=:topright, markersize=3)
-    if png
+    if !tikz
         savefig(p2, "plots/observations.png")
     else
         savefig(p2, "plots/observations.tikz")
